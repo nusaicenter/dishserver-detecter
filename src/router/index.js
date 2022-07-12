@@ -53,6 +53,15 @@ const routes = [
         },
         component: () =>
           import(/* webpackChunkName: "login" */ '../views/User.vue')
+      },
+      {
+        path: '/test',
+        name: 'test',
+        meta: {
+          title: '测试专用'
+        },
+        component: () =>
+          import(/* webpackChunkName: "login" */ '../views/Test.vue')
       }
     ]
   },

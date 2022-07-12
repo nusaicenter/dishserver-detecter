@@ -47,6 +47,11 @@ const menuList = [
     index: '/user',
     name: '个人中心',
     icon: 'UserFilled'
+  },
+  {
+    index: '/test',
+    name: '测试专用',
+    icon: 'List'
   }
 ]
 
