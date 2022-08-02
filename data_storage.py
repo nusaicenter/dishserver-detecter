@@ -19,6 +19,8 @@ class Box():
         self.h: float = h
         self.cls: int = cls
 
+    def toStr(self):
+        return f'{self.cls} {self.x:g} {self.y:g} {self.w:g} {self.h:g}'
 
 class MainImage(object):
     def __init__(self, path, preview_path=None, boxes=None, subimages=None) -> None:
@@ -80,7 +82,7 @@ class DataStorage(object):
 
     def set_subimg_feat(self, subimg_id, feat):
         self.subimgs[subimg_id].feat = feat
-        
+
 
 
 
@@ -152,7 +154,7 @@ def load_image_folder(path:str):
     if preview_path:
         for name in os.listdir(preview_path):
             if name.lower().endswith('.jpg'):
-                main_image_id = splitext(name)[0].split('_')[0]
+                main_image_id = splitext(name)[0].replace('_preview','')
                 images[main_image_id].preview_path = join(preview_path, name)
 
 
@@ -181,7 +183,7 @@ def load_image_folder(path:str):
     # merge all sub-images to main image
     main_sub_map = {} # {mainimg_id:[subimg_id, box_id]}
     for subimg_id in subimgs.keys():
-        names = subimg_id.split('_')
+        names = subimg_id.rsplit('_', maxsplit=1)
         if len(names) == 2:
             mainimg_id, box_id = names
         else:
@@ -190,15 +192,15 @@ def load_image_folder(path:str):
         if mainimg_id in main_sub_map:
             main_sub_map[mainimg_id].append([subimg_id, box_id])
         else:
-            main_sub_map[mainimg_id] = [subimg_id, box_id]
+            main_sub_map[mainimg_id] = [[subimg_id, box_id]]
 
     for mainimg_id, mainimg in images.items():
         if mainimg_id in main_sub_map:
             # modify MainImage object
-            subimg_id, box_id = main_sub_map[mainimg_id]
-            mainimg.subimages[box_id] = subimgs[subimg_id]
-            # modify SubImage object
-            subimgs[subimg_id].parent_image = mainimg_id
+            for subimg_id, box_id in main_sub_map[mainimg_id]:
+                mainimg.subimages[box_id] = subimgs[subimg_id]
+                # modify SubImage object
+                subimgs[subimg_id].parent_image = mainimg_id
 
     return images, subimgs
 
@@ -239,7 +241,7 @@ def load_subimg_folder(path, cls_id) -> Dict[str, SubImage]:
     return subimgs
 
 
-    
+
 
 if __name__ == '__main__':
     folder_path = '/Users/jiahua/Downloads/moving_det_cv/collect2_data/capture_labelled/IPS_2022-03-26.17.24.00.8020'

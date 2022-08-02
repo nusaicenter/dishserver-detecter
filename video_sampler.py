@@ -42,8 +42,8 @@ def check_status(prev: np.ndarray,
 
 
 def gen_filename(video_name):
-    # each frame to save has the relative path "video_name/time.time.jpg"
-    return f'{os.path.join(video_name, str(time.time()))}.jpg'
+    # each frame to save has the relative path "video_name_time.time.jpg"
+    return f'{video_name}_{str(time.time())}.jpg'
 
 
 def gray(frame):
@@ -162,5 +162,16 @@ class VideoSampler(object):
 
     def save_to_folder(self, root_path: str):
         for path, frame in self.save_buffer.items():
-            path = os.path.join(root_path, path)
-            cv2.imwrite(path, frame)
+            save_path = os.path.join(root_path, path)
+            cv2.imwrite(save_path, frame)
+
+if __name__ == '__main__':
+    vs = VideoSampler()
+    video_path = '/Users/jiahua/Downloads/moving_det_cv/testdata/test2.mp4'
+    video_name = os.path.splitext(os.path.basename(video_path))[0]
+    vs.capture(src=video_path, fps=5,assume_stable=900, diff_area_base=0.2, video_name=video_name)
+
+    save_path = 'capture'
+    os.makedirs(save_path, exist_ok=True)
+
+    vs.save_to_folder(root_path=save_path)
