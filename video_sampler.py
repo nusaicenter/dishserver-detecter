@@ -50,6 +50,17 @@ def gray(frame):
     return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
 
+def if_background(img_path, bg_path, fps=5, diff_area_base=0.2):
+    img = gray(cv2.imread(img_path))
+    bg = gray(cv2.imread(bg_path))
+
+    diff_area = diff_area_base / fps
+    notBackground, _, _ = check_status(prev=bg,
+                                       cur=img,
+                                       diff_thresh=255 * 0.4,
+                                       diff_area=diff_area)
+    return notBackground
+
 class VideoSampler(object):
     def __init__(self) -> None:
         # save frames to memory temporary and save to dish together
@@ -148,7 +159,7 @@ class VideoSampler(object):
                                                        diff_area=diff_area)
                     if notBackground:
                         self.save_buffer[gen_filename(video_name)] = ori_frame
-                        # print('static: save frame')
+                        print('static: save frame')
                         # print('backgroud, not save')
 
                     save_flag = True
@@ -161,9 +172,12 @@ class VideoSampler(object):
         cap.release()
 
     def save_to_folder(self, root_path: str):
+        os.makedirs(root_path, exist_ok=True)
         for path, frame in self.save_buffer.items():
             save_path = os.path.join(root_path, path)
             cv2.imwrite(save_path, frame)
+
+
 
 if __name__ == '__main__':
     vs = VideoSampler()
