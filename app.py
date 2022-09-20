@@ -11,11 +11,12 @@ from threading import Thread
 import pickle
 from time import time
 from math import ceil
+from typing import List
 
-
-app = Flask('data manage')
+app = Flask(__name__)
 CORS(app)
-BASE_IP = '192.168.2.62'
+# BASE_IP = '192.168.2.62'
+BASE_IP = '127.0.0.1'
 BASE_PORT = '36192'
 ADDRESS = f'http://{BASE_IP}:{BASE_PORT}'
 NUM_PER_PAGE = 25
@@ -87,7 +88,11 @@ def process_video():
                  video_name=g.video_name)
 
     # save to temp directory
-    save_capture_tmp(tmp_folder)
+    save_path = os.path.join(tmp_folder, g.video_name)
+    os.makedirs(save_path, exist_ok=True)
+    clear_dir(save_path)
+    g.vs.save_to_folder(root_path=save_path)
+
     return 'waiting', 200
 
 @app.route('/save_result', methods=['GET'])
@@ -121,8 +126,10 @@ def get_mainimg():
     mainimg_data = []
     for mainimg_id, mainimg in ds.mainimgs.items():
         # use preview image if exist
-        path = mainimg.preview_path if mainimg.preview_path else mainimg.path
-        path = path2url(path, add_time=True)
+        if os.path.exists(mainimg.preview_path):
+            path = path2url(mainimg.preview_path, add_time=True)
+        else:
+            path = path2url(mainimg.path, add_time=True)
         mainimg_data.append({'key': mainimg_id, 'path': path})
     # sort by the names of image for user to compare between each
     mainimg_data = list(sorted(mainimg_data, key=lambda x: x['key']))
@@ -141,8 +148,6 @@ def get_mainimg():
 def get_subimg():
     folder_path = request.json.get('path', None)
     selected_labels = request.json.get('labels', []) # each element is class names
-    page = request.json.get('page', 1)
-    getConfirm = request.json.get('confirm', 0)
 
     # load this image folder into datastorage
     symlink_path = get_symlink_path(folder_path)
@@ -151,6 +156,7 @@ def get_subimg():
     # prepare the sub images to show
     subimg_data = []
     confirmed_data = []
+    subimg: SubImage
     for subimg_id, subimg in ds.subimgs.items():
         name = ds.id2name.get(subimg.cls_id, '未分类')
         if len(selected_labels) > 0 and (name not in selected_labels):
@@ -158,7 +164,7 @@ def get_subimg():
         else:
             path = path2url(subimg.path, add_time=True)
             data = {'key': subimg_id, 'path': path, 'class': name}
-            if subimg_id in ds.confirmed_subimg:
+            if subimg.confirmed:
                 confirmed_data.append(data)
             else:
                 subimg_data.append(data)
@@ -206,11 +212,11 @@ def find_similar_img():
 
 @app.route('/detect_box', methods=['POST'])
 def detect_box():
-    image_keys = request.json.get('path', None)
-    image_paths = [ds.mainimgs[k].path for k in image_keys]
+    mainimg_ids = request.json.get('path', None)
+    image_paths = [ds.mainimgs[id].path for id in mainimg_ids]
     bboxes = det_model.predict(source=image_paths)
 
-    for mainimg_id, bbox in zip(image_keys, bboxes):
+    for mainimg_id, bbox in zip(mainimg_ids, bboxes):
         mainimg: MainImage = ds.mainimgs[mainimg_id]
 
         boxes = [] # make box objects
@@ -219,16 +225,11 @@ def detect_box():
             boxes.append(Box(x1, y1, x2, y2, width, height))
 
         # refresh subimgs of main image object
-        ds.delete_subimgs(subimg_id)
-        mainimg.boxes = []
-        mainimg.subimages = []
-        subimgs = mainimg.add_boxes(boxes)
+        ds.reset_mainimg(mainimg_id)
+        new_subimgs = mainimg.add_boxes(boxes)
 
-        # refresh subimgs of data storage and reset confirm status
-        ds.subimgs.update(subimgs)
-        for subimg_id in subimgs.keys():
-            ds.confirmed_subimg.pop(subimg_id, None)
-            ds.save_confirm()
+        # refresh subimgs of data storage
+        ds.subimgs.update(new_subimgs)
 
     return 'waiting', 200
 
@@ -266,28 +267,26 @@ def auto_label_subimg():
     # use all confirmed subimg as training set
     feats = []
     labels = []
-    for key in ds.confirmed_subimg.keys():
-        subimg: SubImage = ds.subimgs[key]
-        feats.append(subimg.get_feat(extractor))
-        labels.append(subimg.cls_id)
+    not_confirmed_subimg_feats = {}
+
+    for subimg_id, subimg in ds.subimgs.items():
+        feat = subimg.get_feat(extractor)
+        if subimg.confirmed:
+            feats.append(feat)
+            labels.append(subimg.cls_id)
+        else:
+            not_confirmed_subimg_feats[subimg_id] = feat
 
     if len(set(labels)) < 2:
-        return '请多标注几个类别', 500
+        return '请多标注几个类别', 200
 
     classifier.train_all(data = feats, label=labels)
 
-    # predict left images
-    key_label = {}
-    for key, subimg in ds.subimgs.items():
-        if key in ds.confirmed_subimg:
-            continue
-        feat = subimg.get_feat(extractor)
-        label = classifier.predict([feat])[0]
-        key_label[key] = label
-
-    # modify subimgs and corresponding files
-    for key, label in key_label.items():
-        ds.set_subimg_cls(key, new_cls_id=label, confirm=False)
+    # predict not confirmed images
+    for subimg_id, feat in not_confirmed_subimg_feats.items():
+        new_label = classifier.predict([feat])[0]
+        # modify subimgs and corresponding files
+        ds.set_subimg_cls(subimg_id, new_cls_id=new_label, confirm=False)
 
     return '自动标注完成，请确认', 200
 
@@ -349,13 +348,6 @@ def det_res2bbox(det_res, image_paths):
             draw.rectangle((x1,y1,x2,y2), outline='red', width=3)
         preview_path =  os.path.join(dir_path, f'{img_name}_preview.jpg')
         img.save(preview_path)
-
-
-def save_capture_tmp(path):
-    save_path = os.path.join(path, g.video_name)
-    os.makedirs(save_path, exist_ok=True)
-    clear_dir(save_path)
-    g.vs.save_to_folder(root_path=save_path)
 
 
 def clear_dir(path):

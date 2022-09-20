@@ -1,6 +1,7 @@
 from typing import List, Dict, Tuple
 import numpy as np
 from PIL import Image
+from collections import OrderedDict
 import os
 from os.path import join, basename, isdir, isfile, splitext
 from PIL.Image import Image as PILImage
@@ -19,7 +20,7 @@ class Box():
         four numbers are the actual coordinates of the box in the image.
         '''
         # -1 means unknown class
-        if width is not None and height is not None:
+        if (width is not None) and (height is not None):
             # treat as xyxy format
             self.x1, self.y1, self.x2, self.y2  = x, y, w, h
             self.x, self.y, self.w, self.h = xyxy2xywh(self.x1, self.y1, self.x2, self.y2, width, height)
@@ -27,6 +28,8 @@ class Box():
         else:
             # treat as xywh format
             self.x, self.y, self.w, self.h = x, y, w, h
+            self.x1, self.y1, self.x2, self.y2 = None, None, None, None
+            self.width, self.height = None, None
 
         self.cls: int = cls
 
@@ -37,7 +40,7 @@ class Box():
         return self.x, self.y, self.w, self.h
 
     def get_xyxy(self, width, height):
-        if self.width is not None:
+        if self.x1 is None:
             self.width, self.height = width, height
             self.x1, self.y1, self.x2, self.y2 = xywh2xyxy(self.x, self.y, self.w, self.h, width, height)
 
@@ -46,19 +49,23 @@ class Box():
 
 
 class SubImage(object):
-    def __init__(self, path:str, cls_id:int, parent_image:str='', feat:np.ndarray=None) -> None:
+    def __init__(self, path:str, cls_id:int, mainimg_id:str='', feat:np.ndarray=None) -> None:
 
         check_image_file(path)
         self.path: str = path
-        self.cls_id:int = cls_id
-        self.parent_image: str = parent_image
+        self.id = os.path.splitext(os.path.basename(self.path))[0]
+        self.feat_path: str = self.path.replace('.jpg', '.pkl')
         self.feat: np.ndarray = feat
+        self.cls_id:int = cls_id
+
+        mainimg_id, box_id = self.id.rsplit('_', maxsplit=1)
+        self.mainimg_id: str = mainimg_id
+        self.confirmed: bool = False
 
     def delete_files(self):
         os.remove(self.path)
-        feat_path = self.path.replace('.jpg','.pkl')
-        if self.feat is not None and os.path.exists(feat_path):
-            os.remove(feat_path)
+        if os.path.exists(self.feat_path):
+            os.remove(self.feat_path)
         print(f'sub image {os.path.basename(self.path)} has been deleted')
 
     def get_feat(self, extractor):
@@ -67,67 +74,73 @@ class SubImage(object):
         if self.feat is None:
             img = Image.open(self.path)
             self.feat = extractor.encode([img])[0]
-            with open(self.path.replace('.jpg', '.pkl'), 'wb') as f:
+            with open(self.feat_path, 'wb') as f:
                 pickle.dump(self.feat, f)
 
         return self.feat
-        
+
 
 class MainImage(object):
-    def __init__(self, path, preview_path=None, boxes=None, subimages=None) -> None:
+    def __init__(self, path, preview_path=None, boxes=None, subimgs=None) -> None:
         check_image_file(path)
         self.path: str = path
-        self.preview_path = preview_path if preview_path else ''
-        # self.project: str = project
-        self.boxes: List[Box] = boxes if boxes else list()
-        if subimages:
-            assert len(subimages) == len(boxes), 'number of subimages and boxes not match'
-            self.subimages: List[str] = subimages
-        else:
-            self.subimages = [None] * len(self.boxes)
-
-
-        self.id = os.path.basename(self.path).replace('.jpg','')
         self.dir = os.path.dirname(self.path)
+        self.id = os.path.splitext(os.path.basename(self.path))[0]
+        self.info_path: str = self.path.replace('.jpg', '.json')
+        self.label_path: str = self.path.replace('.jpg', '.txt')
+        self.preview_path = os.path.join(self.dir, 'preview', f'{self.id}_preview.jpg')
 
-    # def if_box_format(boxes):
-    #     # the boxes format is List[List[float, float, float, float]]
-    #     if isinstance(boxes, List):
-    #         for box in boxes:
-    #             if not (isinstance(box, List) and len(box) == 4):
-    #                 return False
+        self.boxes: List[Box] = boxes if boxes else list()
 
-    #         return True
-    #     else:
-    #         return False
+        if subimgs:
+            assert len(subimgs) == len(boxes), 'number of subimages and boxes not match'
+            self.subimgs = OrderedDict(subimgs)
+        else:
+            self.subimgs = OrderedDict()
+
 
     def save_label(self):
-        label_path = self.path.replace('.jpg', '.txt')
         label_str = ''.join([box.to_str() + '\n' for box in self.boxes if box])
-        with open(label_path, 'w') as f:
+        with open(self.label_path, 'w') as f:
             f.write(label_str)
 
+    def save_info(self):
+        # save its subimage ids and their confirm status to info files
+        assert len(self.subimgs) == len(self.boxes), 'number of subimages and boxes not match'
+        infos = []
+        for subimg_id, subimg in self.subimgs.items():
+            infos.append([subimg_id, subimg.confirmed])
+        with open(self.info_path, 'w') as f:
+            json.dump(infos, f)
+
+    # def gen_info(self):
+    #     # generate info file based on boxes/label file
+    #     self.subimg_infos = [[f'{self.id}_{i}', False] for i, _ in enumerate(self.boxes)]
+    #     self.save_info()
+
     def save_preview(self):
-        dir_path = os.path.join(self.dir, 'preview')
-        os.makedirs(dir_path, exist_ok=True)
+        os.makedirs(os.path.join(self.dir, 'preview'), exist_ok=True)
         img = Image.open(self.path)
-        draw = ImageDraw.Draw(img)
         width, height = img.size
+        draw = ImageDraw.Draw(img)
         box: Box
         for box in self.boxes:
             x1, y1, x2, y2 = xywh2xyxy(box.x, box.y, box.w, box.h, width, height)
-            draw.rectangle((x1,y1,x2,y2), outline='red', width=5)
+            draw.rectangle((x1,y1,x2,y2), outline='red', width=9)
 
-        self.preview_path =  os.path.join(dir_path, f'{self.id}_preview.jpg')
         img.save(self.preview_path)
 
-    def del_subimg(self, subimg_id_del:str):
-        idx_to_del:int = self.subimages.index(subimg_id_del)
-        del self.subimages[idx_to_del]
-        del self.boxes[idx_to_del]
+    def del_subimg(self, subimg_id_del: str):
+        # delete found sub image id and update the label/info/preview files
+        for i, subimg_id in enumerate(self.subimgs):
+            if subimg_id_del == subimg_id:
+                del self.boxes[i]
+                del self.subimgs[subimg_id]
+                self.save_label()
+                self.save_info()
+                self.save_preview()
+                break
 
-        self.save_label()
-        self.save_preview()
 
     def add_boxes(self, boxes: List[Box]):
         old_len = len(self.boxes)
@@ -147,9 +160,14 @@ class MainImage(object):
         for i in range(old_len, len(self.boxes)):
             box = self.boxes[i]
 
-            # add subimage id to main image
-            subimg_id = f'{self.id}_{i}'
-            self.subimages.append(subimg_id)
+            # add subimage id to main image, avoid duplicate ids
+            box_id = i
+            while True:
+                subimg_id = f'{self.id}_{box_id}'
+                if subimg_id in self.subimgs:
+                    box_id += 1  # id exists, try new box_id
+                else:
+                    break # id not exists, can be used
 
             # crop the subimage
             x1, y1, x2, y2 = box.get_xyxy(width, height)
@@ -160,21 +178,27 @@ class MainImage(object):
             subimg_img.save(subimg_path)
 
             # create SubImage object to return
-            subimg = SubImage(subimg_path, cls_id=-1, parent_image=self.path)
+            subimg = SubImage(subimg_path, cls_id=-1, mainimg_id=self.path)
             subimgs[subimg_id] = subimg
+            self.subimgs[subimg_id] = subimg
 
         return subimgs
 
     def delete_files(self):
         os.remove(self.path)
-        label_path = self.path.replace('.jpg', '.txt')
-        if os.path.exists(label_path):
-            os.remove(label_path)
-        if self.preview_path and os.path.exists(self.preview_path):
+        if os.path.exists(self.label_path):
+            os.remove(self.label_path)
+        if os.path.exists(self.preview_path):
             os.remove(self.preview_path)
 
         print(f'main image {os.path.basename(self.path)} has been deleted')
 
+    def reset(self):
+        self.boxes = []
+        self.subimgs = OrderedDict()
+        self.save_label()
+        self.save_info()
+        self.save_preview()
 
 
 class DataStorage(object):
@@ -184,26 +208,19 @@ class DataStorage(object):
         self.subimgs: dict[str, SubImage] = {}
         self.id2name: dict[int, str] = {}
         self.name2id: dict[str, int] = {}
-        self.confirmed_subimg: dict[str, str] = {}
 
     def load_datafolder(self, path, force=False):
         if path != self.root or force:
-            self.mainimgs, self.subimgs, self.id2name, self.confirmed_subimg = load_image_folder(path)
+            self.mainimgs, self.subimgs, self.id2name = load_image_folder(path)
             self.name2id = {v: k for k, v in self.id2name.items()}
             self.root = path
 
-    # def load_image(self, path, label=None, project=''):
-    #     idx = len(self.images) # self-increment index
-    #     self.images[idx] = MainImage(path)
-
-
-
     # change class of one sub-image
-    def set_subimg_cls(self, key:str, new_cls_id:int, confirm=True):
-        subimg:SubImage = self.subimgs[key]
+    def set_subimg_cls(self, subimg_id:str, new_cls_id:int, confirm=True):
+        subimg: SubImage = self.subimgs[subimg_id]
         if new_cls_id != subimg.cls_id:
             subimg.cls_id = new_cls_id
-            # move the subimg file to new location
+            # move the subimg/feat file to new location
             subimg_folder = join(self.root, 'sub_images')
             if new_cls_id == -1:
                 dst = join(subimg_folder, basename(subimg.path))
@@ -214,112 +231,81 @@ class DataStorage(object):
 
             shutil.move(src=subimg.path, dst=dst)
             if subimg.feat is not None:
-                feat_path = subimg.path.replace('.jpg', '.pkl')
-                if os.path.exists(feat_path):
-                    shutil.move(src=feat_path, dst=dst.replace('.jpg', '.pkl'))
+                if os.path.exists(subimg.feat_path):
+                    shutil.move(src=subimg.feat_path, dst=dst.replace('.jpg', '.pkl'))
             subimg.path = dst
 
+            # change boxes of its main image
+            mainimg: MainImage = self.mainimgs[subimg.mainimg_id]
+            for i, (id, _) in enumerate(mainimg.subimgs.items()):
+                if subimg_id == id:
+                    mainimg.boxes[i].cls = new_cls_id
+                    break
 
-
-            # change its parent image object
-            if subimg.parent_image:
-                mainimg = self.mainimgs[subimg.parent_image]
-                for i, subimg_key in enumerate(mainimg.subimages):
-                    if key == subimg_key:
-                        mainimg.boxes[i].cls = new_cls_id
-                        break
-                # overwrite the label file
-                mainimg.save_label()
+            # overwrite the label/info file
+            mainimg.save_label()
+            mainimg.save_info()
 
         # add to confirmed list, and save it
         if confirm:
-            self.confirm_subimgs(key)
+            self.confirm_subimgs(subimg_id)
 
-    def confirm_subimgs(self, keys:Tuple[str,List[str]]):
-        if isinstance(keys, str):
-            keys = [keys]
-        for key in keys:
-            if self.subimgs[key].cls_id == -1:
-                continue
-            self.confirmed_subimg[key] = '1'
 
-        with open(join(self.root, 'confirmed_subimg.json'), 'w') as f:
-            json.dump(self.confirmed_subimg, f,
-                    indent=4,
-                    ensure_ascii=False)
+    def confirm_subimgs(self, ids:Tuple[str,List[str]]):
+        # accept single id or list of ids
+        if isinstance(ids, str):
+            ids = [ids]
 
-    def save_confirm(self):
-        with open(join(self.root, 'confirmed_subimg.json'), 'w') as f:
-            json.dump(self.confirmed_subimg, f,
-                      indent=4,
-                      ensure_ascii=False)
+        mainimg_ids = []
+        for subimg_id in ids:
+            subimg: SubImage = self.subimgs[subimg_id]
+            if subimg.cls_id != -1: # ignore confirm if no class name set
+                subimg.confirmed = True
+                mainimg_ids.append(subimg.mainimg_id)
 
+        # update info files of the main images
+        mainimg_ids = list(set(mainimg_ids))
+        for mainimg_id in mainimg_ids:
+            mainimg: MainImage = self.mainimgs[mainimg_id]
+            mainimg.save_info()
 
     # TODO: change boxes position of mainimg
 
-    def delete_mainimg(self, key):
-        mainimg = self.mainimgs[key]
+    def delete_mainimg(self, mainimg_id):
+        mainimg = self.mainimgs[mainimg_id]
         # delete corresponding subimgs
-        self.delete_subimgs(mainimg.subimages[::-1])
+        for subimg_id in mainimg.subimgs.keys():
+            subimg:SubImage = self.subimgs[subimg_id]
+            subimg.delete_files()
+            del self.subimgs[subimg_id]
 
         mainimg.delete_files()
-        del self.mainimgs[key]
+        del self.mainimgs[mainimg_id]
 
-    def delete_subimgs(self, keys):
-        if isinstance(keys, str):
-            keys = [keys]
-
-        for i, key in enumerate(keys):
-            subimg = self.subimgs[key]
-            # delete sub image file
+    def reset_mainimg(self, mainimg_id):
+        mainimg = self.mainimgs[mainimg_id]
+        # delete corresponding subimgs
+        for subimg_id in mainimg.subimgs.keys():
+            subimg:SubImage = self.subimgs[subimg_id]
             subimg.delete_files()
+            del self.subimgs[subimg_id]
 
-            if subimg.parent_image:
-                # delete its record in main image
-                mainimg: MainImage = self.mainimgs[subimg.parent_image]
-                mainimg.del_subimg(key)
+        mainimg.reset()
 
-                # re-order box_id of the left subimages
-                # rename sub images
-                old2new = {}
-                for i, old_id in enumerate(mainimg.subimages):
-                    new_id = f'{subimg.parent_image}_{i}'
-                    old2new[old_id] = new_id
-                    mainimg.subimages[i] = new_id
 
-                # apply this change to subimgs dict
-                for old_id, new_id in old2new.items():
-                    if old_id == new_id: continue
-                    # rename the key of sub image object
-                    subimg: SubImage = self.subimgs.pop(old_id)
-                    self.subimgs[new_id] = subimg
+    def delete_subimgs(self, ids:Tuple[str,List[str]]):
+        # accept single id or list of ids
+        if isinstance(ids, str):
+            ids = [ids]
 
-                    # rename the re-ordered sub image+feat files
-                    new_path = subimg.path.replace(old_id, new_id)
-                    shutil.move(src=subimg.path, dst=new_path)
-
-                    if subimg.feat is not None:
-                        feat_path = subimg.path.replace('.jpg', '.pkl')
-                        if os.path.exists(feat_path):
-                            shutil.move(src=feat_path, dst=feat_path.replace(old_id, new_id))
-                    subimg.path = new_path
-
-                    # change the subimg id in confirmed list
-                    if old_id in self.confirmed_subimg:
-                        del self.confirmed_subimg[old_id]
-                        self.confirmed_subimg[new_id] = '1'
-
-                    # this may influence other keys in list to delete, so update them
-                    for j, key_j in enumerate(keys[i+1:]):
-                        if key_j == old_id:
-                            keys[i+1+j] = new_id
-                            break
-
-            del self.subimgs[key]
-            if key in self.confirmed_subimg:
-                del self.confirmed_subimg[key]
-                self.save_confirm()
-
+        for subimg_id in ids:
+            subimg:SubImage = self.subimgs[subimg_id]
+            subimg.delete_files()
+            # delete the record in its main image
+            mainimg: MainImage = self.mainimgs[subimg.mainimg_id]
+            mainimg.del_subimg(subimg_id)
+            # delete sub image record
+            del self.subimgs[subimg_id]
 
 
     def add_cls(self, new_cls_name:str):
@@ -346,117 +332,154 @@ def check_image_file(path):
 def load_image_folder(path:str):
     # Scan the directory path and find all images
     # For MainImage, if it has label file, the label path is the same as image,
-    # but with .txt suffix and yolo-format(each line is [id x y w h(percent)])
+    # with .txt suffix and yolo-format(each line is [id x y w h(percent)])
     #
     # The directory structure is:
-    # --- directory
-    #   |-- id_name_map.json
-    #   |-- confirmed_subimg.json
+    # --- root directory
+    #   |-- id_name_map.json # convert class id to class name
     #   |-- sub_images
-    #   |   |--[cls_name] # class name
-    #   |   |   |--[image_id].jpg # sub image (classified)
-    #   |   |   |--[image_id].pkl # sub image feature (classified)
-    #   |   |-- [image_id].jpg # sub image (unclassified)
-    #   |   |-- [image_id].pkl # sub image feature (unclassified)
+    #   |   |-- [cls_name] # class name
+    #   |   |    |--[subimg_id].jpg # sub image (classified)
+    #   |   |    |--[subimg_id].pkl # CNN feature of sub image (classified)
+    #   |   |-- [subimg_id].jpg # sub image (unclassified)
+    #   |   |-- [subimg_id].pkl # sub image feature (unclassified)
+
     #   |-- preview
-    #   |   |--[image_preview].jpg # detection result
-    #   |-- [image].jpg # main image
-    #   |-- [image].txt # label
+    #   |   |--[image_preview].jpg # visualized detection result
+    #   |-- [mainimg_id].jpg # main image. The necessary file, other files are all based on it.
+    #   |-- [mainimg_id].txt # label of main image (yolo format)
+    #   |-- [mainimg_id].json # the subimg_ids of mainimg and their comfirming status
+
+    # The most basic files are main images, and then the label files.
+    # Preview/info/sub-images are all depended on label files.
 
     assert isdir(path), 'The path is not a directory'
-    id_name_map = {}
-    confirmed_subimg = {}
-    subimg_path = ''
-    preview_path = ''
-    images = {} # file id: file path
-    labels = {} # file id: file path
+    id2name, name2id = {}, {}
+    subimg_folder = ''
+    preview_folder = ''
+    # mainimg_previews = {} # file id: image jpg path
+    mainimg_labels = {} # file id: label txt path
+    mainimg_infos = {} # file id: info json path
 
-    subimgs = {} # subimg id: file path
-    # feats = {}
+    mainimgs = {}# mainimg id: MainImage
+    subimgs = {} # subimg id: SubImage
 
-    # scan base directory
+    # scan root directory
     for name in os.listdir(path):
         if name == 'id_name_map.json':
             with open(join(path, name), 'r') as f:
-                id_name_map = {int(k):v for k,v in json.load(f).items()}
-                name2id = {v:k for k,v in id_name_map.items()}
-
-        elif name == 'confirmed_subimg.json':
-            with open(join(path, name), 'r') as f:
-                confirmed_subimg = json.load(f)
+                id2name = {int(k):v for k,v in json.load(f).items()}
+                name2id = {v:k for k,v in id2name.items()}
 
         elif name == 'sub_images':
-            subimg_path = join(path, name)
-            assert isdir(subimg_path), 'The sub_image should be a directory'
+            subimg_folder = join(path, name)
+            assert isdir(subimg_folder), f'{subimg_folder} is not a directory'
 
         elif name == 'preview':
-            preview_path = join(path, name)
-            assert isdir(preview_path), 'The sub_image should be a directory'
+            preview_folder = join(path, name)
+            assert isdir(preview_folder), f'{preview_folder} is not a directory'
 
         elif name.lower().endswith('jpg'):
-            images[splitext(name)[0]] = join(path, name)
+            mainimg_id = splitext(name)[0]
+            mainimgs[mainimg_id] = MainImage(join(path, name))
 
         elif name.lower().endswith('txt'):
-            labels[splitext(name)[0]] = join(path, name)
+            mainimg_id = splitext(name)[0]
+            mainimg_labels[mainimg_id] = join(path, name)
 
-    # convert value type, file id: MainImage object
-    for k in images.keys():
-        images[k] = MainImage(images[k])
+        elif name.lower().endswith('json'):
+            mainimg_id = splitext(name)[0]
+            mainimg_infos[mainimg_id] = join(path, name)
+
+    ### files recording and validation
+    # remove label files which don't have origin main images
+    for mainimg_id in list(mainimg_labels.keys()):
+        if mainimg_id not in mainimgs:
+            os.remove(mainimg_labels[mainimg_id])
+            del mainimg_labels[mainimg_id]
+
+    # remove info files which don't have label files
+    for mainimg_id in list(mainimg_infos.keys()):
+        if mainimg_id not in mainimg_labels:
+            os.remove(mainimg_infos[mainimg_id])
+            del mainimg_infos[mainimg_id]
 
     # scan preview directory
-    if preview_path:
-        for name in os.listdir(preview_path):
+    if preview_folder:
+        for name in os.listdir(preview_folder):
             if name.lower().endswith('.jpg'):
-                mainimg_key = splitext(name)[0].replace('_preview','')
-                images[mainimg_key].preview_path = join(preview_path, name)
+                mainimg_id = splitext(name)[0].replace('_preview','')
+                preview_path = join(preview_folder, name)
+                # remove the preview files which don't have label files
+                if mainimg_id not in mainimg_labels:
+                    os.remove(preview_path)
 
 
     # scan subimg directory
-    if subimg_path:
-        imgs = load_subimg_folder(subimg_path, cls_id=-1)
+    if subimg_folder:
+        # load unclassified subimages
+        imgs: Dict[str, SubImage] = load_subimg_folder(subimg_folder, cls_id=-1)
         subimgs.update(imgs)
 
-        for name in os.listdir(subimg_path):
-            dir_path = join(subimg_path, name)
+        # load classified subimages
+        for name in os.listdir(subimg_folder):
+            dir_path = join(subimg_folder, name)
             if isdir(dir_path):
-                imgs = load_subimg_folder(dir_path, cls_id=name2id[name])
+                imgs: Dict[str, SubImage] = load_subimg_folder(dir_path, cls_id=name2id[name])
                 subimgs.update(imgs)
 
+        # remove sub images which don't have label files
+        for subimg_id in list(subimgs.keys()):
+            subimg: SubImage = subimgs[subimg_id]
+            if subimg.mainimg_id not in mainimg_labels:
+                subimg.delete_files()
+                del subimgs[subimg_id]
 
-    # add labels to MainImage
-    for img_id in images.keys():
-        if img_id in labels:
-            label_path = labels[img_id]
-            boxes = load_label_file(label_path)
-            images[img_id].boxes = boxes
-            images[img_id].subimages = [None] * len(boxes) # reset
-
-    # add subimgs to MainImage
-    # based on main image (if there is only subimage, ignore it)
-    # merge all sub-images to main image
-    main_sub_map = {} # {mainimg_id:List[[subimg_id, box_id]]}
-    for subimg_id in subimgs.keys():
-        names = subimg_id.rsplit('_', maxsplit=1)
-        if len(names) == 2:
-            mainimg_id, box_id = names
+    ### merging data
+    # add labels, infos and subimgs to MainImage
+    main_sub_map = {}  # {mainimg_id:List[subimg_id]}
+    for subimg_id, subimg in subimgs.items():
+        if subimg.mainimg_id in main_sub_map:
+            main_sub_map[subimg.mainimg_id].append(subimg_id)
         else:
-            continue # ignore
-        box_id = int(box_id)
-        if mainimg_id in main_sub_map:
-            main_sub_map[mainimg_id].append([subimg_id, box_id])
+            main_sub_map[subimg.mainimg_id] = [subimg_id]
+
+    for mainimg_id, label_path in mainimg_labels.items():
+        boxes: List[Box] = load_label_file(label_path)
+
+        all_match = False
+        if mainimg_id in mainimg_infos:
+            info_path = mainimg_infos[mainimg_id]
+            infos = load_info_file(info_path)
+            # check info length and sub images files completed
+            if (len(boxes) == len(infos)) and (
+                len(boxes) == len(main_sub_map[mainimg_id])):
+                all_match = True
+
+        # connect main image with label/info/sub images
+        mainimg: MainImage = mainimgs[mainimg_id]
+        if all_match:
+            mainimg.boxes = boxes
+            for subimg_id, confirmed in infos:
+                subimg: SubImage = subimgs[subimg_id]
+                subimg.confirmed = confirmed # update confirm status
+                mainimg.subimgs[subimg_id] = subimg # register to main image
         else:
-            main_sub_map[mainimg_id] = [[subimg_id, box_id]]
+            # remove not completed sub images firstly
+            if mainimg_id in main_sub_map:
+                for subimg_id in main_sub_map[mainimg_id]:
+                    subimg:SubImage = subimgs[subimg_id]
+                    subimg.delete_files()
+                    del subimgs[subimg_id]
 
-    mainimg_id: str; mainimg: MainImage
-    for mainimg_id, mainimg in images.items():
-        if mainimg_id in main_sub_map:
-            # modify MainImage object
-            for subimg_id, box_id in main_sub_map[mainimg_id]:
-                mainimg.subimages[box_id] = subimg_id
-                # modify SubImage object
-                subimgs[subimg_id].parent_image = mainimg_id
+            # generate new info files, preview and subimages
+            new_subimgs: Dict[str:SubImage] = mainimg.add_boxes(boxes)
+            mainimg.save_info()
+            mainimg.save_preview()
 
-    return images, subimgs, id_name_map, confirmed_subimg
+            subimgs.update(new_subimgs) # add new sub images
+
+    return mainimgs, subimgs, id2name
 
 def load_label_file(path):
     # load yolo-format label txt file
@@ -469,6 +492,13 @@ def load_label_file(path):
         boxes.append(Box(*xywh, cls=int(label[0])))
     return boxes
 
+def load_info_file(path):
+    # a list of 2-elements list, stored/loaded by json
+    # [[subimg_id1, confirm_state], [subimg_id2, confirm_state], ...]
+    with open(path, 'r') as f:
+        infos = json.load(f)
+    return infos
+
 
 def load_subimg_folder(path, cls_id) -> Dict[str, SubImage]:
     # only load .jpg and .pkl files in one directory, not include sub-folders
@@ -477,11 +507,11 @@ def load_subimg_folder(path, cls_id) -> Dict[str, SubImage]:
     pkls = {}
     for name in os.listdir(path):
         subimg_id = splitext(name)[0]
-        fullpath = join(path, name)
+        full_path = join(path, name)
         if name.lower().endswith('.jpg'):
-            imgs[subimg_id] = fullpath
+            imgs[subimg_id] = full_path
         elif name.lower().endswith('.pkl'):
-            pkls[subimg_id] = fullpath
+            pkls[subimg_id] = full_path
 
     # merge two type files
     subimgs = {} # subimg id : SubImage object
@@ -490,7 +520,12 @@ def load_subimg_folder(path, cls_id) -> Dict[str, SubImage]:
         if subimg_id in pkls:
             with open(pkls[subimg_id], 'rb') as f:
                 feat = pickle.load(f)
+            del pkls[subimg_id] # remove the loaded feat paths
         subimgs[subimg_id] = SubImage(path=imgs[subimg_id], cls_id=cls_id, feat=feat)
+
+    # For the feature files whose the origin subimg not exists, remove them
+    for full_path in pkls.values():
+        os.remove(full_path)
 
     return subimgs
 
