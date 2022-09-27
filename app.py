@@ -297,6 +297,21 @@ def delete_subimgs():
 
     return 'success', 200
 
+@app.route('/analysis/counting_class', methods=['GET'])
+def counting_class():
+    # count the number of sub images of each class
+    counter = {}
+    subimg: SubImage
+    for subimg_id, subimg in ds.subimgs.items():
+        if subimg.cls_id in counter:
+            counter[subimg.cls_id] +=1
+        else:
+            counter[subimg.cls_id] = 1
+
+    # convert class id to class name
+    counter = {ds.id2name[k]: v for k, v in counter.items()}
+    return counter
+
 def path2url(path, add_time=False):
     # For some resource need inplace changing, add timestamp to
     # force the browser to refresh them
