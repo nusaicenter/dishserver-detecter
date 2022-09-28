@@ -190,6 +190,8 @@ class MainImage(object):
             os.remove(self.label_path)
         if os.path.exists(self.preview_path):
             os.remove(self.preview_path)
+        if os.path.exists(self.info_path):
+            os.remove(self.info_path) 
 
         print(f'main image {os.path.basename(self.path)} has been deleted')
 
@@ -268,6 +270,12 @@ class DataStorage(object):
         for mainimg_id in mainimg_ids:
             mainimg: MainImage = self.mainimgs[mainimg_id]
             mainimg.save_info()
+
+    def add_mainimg(self, image:PILImage, mainimg_id):
+        name = f'{mainimg_id}.jpg'
+        path = join(self.root, name)
+        image.save(path)
+        self.mainimgs[mainimg_id] = MainImage(path=path)
 
     # TODO: change boxes position of mainimg
 

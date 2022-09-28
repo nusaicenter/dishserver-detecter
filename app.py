@@ -2,6 +2,7 @@ from flask import Flask, json, jsonify, request, g
 from flask_cors import CORS
 
 import os
+from os.path import join
 from video_sampler import VideoSampler, if_background
 
 from data_storage import Box, SubImage, MainImage, xyxy2xywh
@@ -19,10 +20,10 @@ CORS(app)
 BASE_IP = '127.0.0.1'
 BASE_PORT = '36192'
 ADDRESS = f'http://{BASE_IP}:{BASE_PORT}'
-NUM_PER_PAGE = 25
 
 video_folder = '/Users/jiahua/Downloads/moving_det_cv/testdata'
 tmp_folder = '/Users/jiahua/Downloads/moving_det_cv/tmp'
+model_weight_folder = '/Users/jiahua/Downloads/moving_det_cv/detect_api/weights'
 STATIC_PATH = './static'
 os.makedirs(tmp_folder, exist_ok=True)
 
@@ -30,15 +31,14 @@ os.makedirs(tmp_folder, exist_ok=True)
 from detect_api.clf_model_simple import nearCenter
 from detect_api.feat_extractor import mobnet_openvino
 from detect_api.det_model import yolo_openvino
-import cv2
-import numpy as np
+
 det_model = yolo_openvino(
-    xml_path = os.path.join('/Users/jiahua/Downloads/moving_det_cv/detect_api/weights/yolov5_best.xml'),
-    bin_path = os.path.join('/Users/jiahua/Downloads/moving_det_cv/detect_api/weights/yolov5_best.bin'),
+    xml_path = join(model_weight_folder, 'yolov5_best.xml'),
+    bin_path = join(model_weight_folder, 'yolov5_best.bin')
 )
 extractor = mobnet_openvino(
-    bin_path='/Users/jiahua/Downloads/moving_det_cv/detect_api/weights/distil_mobv3_run1_best.bin',
-    xml_path='/Users/jiahua/Downloads/moving_det_cv/detect_api/weights/distil_mobv3_run1_best.xml'
+    bin_path=join(model_weight_folder, 'distil_mobv3_run1_best.bin'),
+    xml_path=join(model_weight_folder, 'distil_mobv3_run1_best.xml')
 )
 classifier = nearCenter()
 
@@ -134,13 +134,6 @@ def get_mainimg():
     # sort by the names of image for user to compare between each
     mainimg_data = list(sorted(mainimg_data, key=lambda x: x['key']))
 
-    # count = len(mainimg_data)
-    # page_num = ceil(count/NUM_PER_PAGE)
-    # page = min(page, page_num)-1
-
-    # mainimg_data = mainimg_data[page * NUM_PER_PAGE:(page + 1) * NUM_PER_PAGE]
-    # page_num = 1
-
     return jsonify({'mainimg': mainimg_data})
 
 
@@ -176,6 +169,16 @@ def get_subimg():
         # 'page_num': page
     })
 
+@app.route('/mainimg/add_mainimg', methods=['POST'])
+def add_mainimg():
+    img_data = request.files.getlist('img')
+    if img_data is None:
+        return 'please pass image with `img` key', 200
+    for data in img_data:    
+        image = Image.open(data).convert('RGB')
+        mainimg_id = 'upload_' + str(time())
+        ds.add_mainimg(image, mainimg_id)
+    return 'success', 200
 
 @app.route('/delete_images', methods=['POST'])
 def delete_images():
