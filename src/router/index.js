@@ -4,7 +4,7 @@ import Home from '../views/Home.vue'
 const routes = [
   {
     path: '/',
-    redirect: 'dashboard'
+    redirect: 'videoprocess'
   },
   {
     path: '/',
@@ -16,72 +16,33 @@ const routes = [
     },
     children: [
       {
-        path: '/dashboard',
-        name: 'dashboard',
+        path: '/videoprocess',
+        name: 'videoprocess',
         meta: {
-          title: '菜品管理',
-          icon: 'HomeFilled'
+          title: '视频处理'
         },
         component: () =>
-          import(/* webpackChunkName: "dashboard" */ '../views/Dashboard.vue')
+          import(/* webpackChunkName: "login" */ '../views/VideoProcess.vue')
       },
       {
-        path: '/upload',
-        name: 'upload',
+        path: '/mainimgclean',
+        name: 'mainimgclean',
         meta: {
-          title: '菜品上传',
-          icon: 'Upload'
+          title: '餐盘图片'
         },
         component: () =>
-          import(/* webpackChunkName: "upload" */ '../views/Upload.vue')
-      },
-      // {
-      //   path: '/edit',
-      //   name: 'edit',
-      //   meta: {
-      //     title: '菜品编辑',
-      //     icon: 'Edit'
-      //   },
-      //   component: () =>
-      //     import(/* webpackChunkName: "upload" */ '../views/Edit.vue')
-      // },
-      {
-        path: '/user',
-        name: 'user',
-        meta: {
-          title: '个人中心'
-        },
-        component: () =>
-          import(/* webpackChunkName: "login" */ '../views/User.vue')
+          import(/* webpackChunkName: "login" */ '../views/MainimgClean.vue')
       },
       {
-        path: '/test',
-        name: 'test',
+        path: '/subimgclean',
+        name: 'subimgclean',
         meta: {
-          title: '测试专用'
+          title: '菜品图片'
         },
         component: () =>
-          import(/* webpackChunkName: "login" */ '../views/Test.vue')
-      }
+          import(/* webpackChunkName: "login" */ '../views/SubimgClean.vue')
+      },
     ]
-  },
-  {
-    path: '/login',
-    name: 'login',
-    meta: {
-      title: '登录'
-    },
-    component: () =>
-      import(/* webpackChunkName: "login" */ '../views/Login.vue')
-  },
-  {
-    path: '/register',
-    name: 'register',
-    meta: {
-      title: '注册'
-    },
-    component: () =>
-      import(/* webpackChunkName: "register" */ '../views/Register.vue')
   }
 ]
 

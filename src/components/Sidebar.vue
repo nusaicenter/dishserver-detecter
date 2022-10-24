@@ -34,24 +34,19 @@ const { collapse } = storeToRefs(rootStore)
 
 const menuList = [
   {
-    index: '/dashboard',
-    name: '菜品管理',
-    icon: 'HomeFilled'
+    index: '/videoprocess',
+    name: '视频处理',
+    icon: 'VideoCamera'
   },
   {
-    index: '/upload',
-    name: '菜品上传',
-    icon: 'UploadFilled'
+    index: '/mainimgclean',
+    name: '餐盘图片',
+    icon: 'Picture'
   },
   {
-    index: '/user',
-    name: '个人中心',
-    icon: 'UserFilled'
-  },
-  {
-    index: '/test',
-    name: '测试专用',
-    icon: 'List'
+    index: '/subimgclean',
+    name: '菜品图片',
+    icon: 'ForkSpoon'
   }
 ]
 

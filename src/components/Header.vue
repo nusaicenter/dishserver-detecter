@@ -8,28 +8,7 @@
         <Expand />
       </el-icon>
     </div>
-    <div class="logo">菜品后台管理系统</div>
-    <div class="header-right">
-      <div class="header-user-con">
-        <div class="user-avatar">
-          <img src="http://placekitten.com/120/120" />
-        </div>
-        <el-dropdown class="user-name" trigger="click" @command="handleCommand">
-          <span class="el-dropdown-link">
-            {{username}}
-            <el-icon>
-              <CaretBottom />
-            </el-icon>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="user">个人中心</el-dropdown-item>
-              <el-dropdown-item divided command="logout">退出登录</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-    </div>
+    <div class="logo">菜品图片标注系统</div>
   </div>
 </template>
 <script setup>
