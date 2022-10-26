@@ -1,0 +1,13 @@
+collect2_data
+testdata
+__pycache__
+weights
+*.pkl
+*.bin
+detect_api
+tmp
+static
+videos
+wrong_preds*
+.vscode
+
