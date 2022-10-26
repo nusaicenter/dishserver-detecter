@@ -2,7 +2,7 @@ from flask import Flask, json, jsonify, request, g
 from flask_cors import CORS
 
 import os
-from os.path import join
+from os.path import join, dirname, realpath
 from video_sampler import VideoSampler, if_background
 
 from data_storage import Box, SubImage, MainImage, xyxy2xywh
@@ -21,13 +21,21 @@ BASE_IP = '127.0.0.1'
 BASE_PORT = '36192'
 ADDRESS = f'http://{BASE_IP}:{BASE_PORT}'
 
-video_folder = '/Users/jiahua/Downloads/moving_det_cv/testdata'
-tmp_folder = '/Users/jiahua/Downloads/moving_det_cv/tmp'
-model_weight_folder = '/Users/jiahua/Downloads/moving_det_cv/detect_api/weights'
-STATIC_PATH = './static'
+import sys
+dir_path = dirname(realpath(__file__))
+parent_dir_path = dirname(dir_path)
+detect_api_folder = join(parent_dir_path, 'detect_api')
+model_weight_folder = join(detect_api_folder, 'weights')
+
+video_folder = join(dir_path, 'testdata')
+tmp_folder = join(dir_path, 'tmp')
+STATIC_PATH = join(dir_path, 'static')
 os.makedirs(tmp_folder, exist_ok=True)
 
 # prepare model
+sys.path.append(parent_dir_path)
+sys.path.append(join(parent_dir_path, 'detect_api'))
+
 from detect_api.clf_model_simple import nearCenter
 from detect_api.feat_extractor import mobnet_openvino
 from detect_api.det_model import yolo_openvino
