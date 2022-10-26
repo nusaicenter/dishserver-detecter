@@ -1,0 +1,13 @@
+flask
+flask_cors>=3.0.10
+openvino==2021.4.1
+scikit-learn
+torchvision
+torch
+pandas
+requests
+opencv-python
+PyYAML
+tqdm
+seaborn
+matplotlib
