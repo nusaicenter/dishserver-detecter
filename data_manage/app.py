@@ -16,23 +16,30 @@ from typing import List
 
 app = Flask(__name__)
 CORS(app)
-# BASE_IP = '192.168.2.62'
-BASE_IP = '127.0.0.1'
-BASE_PORT = '36192'
-ADDRESS = f'http://{BASE_IP}:{BASE_PORT}'
 
+# locate/create data folders
 import sys
 dir_path = dirname(realpath(__file__))
+
+video_folder = join(dir_path, 'videos')
+image_folder = join(dir_path, 'images')
+static_folder = join(dir_path, 'static')
+os.makedirs(video_folder, exist_ok=True)
+os.makedirs(image_folder, exist_ok=True)
+os.makedirs(static_folder, exist_ok=True)
+
+# load IP config
+with open(join(dir_path, 'config.json')) as f:
+    config = json.load(f)
+BASE_IP = config['host']
+BASE_PORT = config['port']
+ADDRESS = f'http://{BASE_IP}:{BASE_PORT}'
+
+# import dish detector models
 parent_dir_path = dirname(dir_path)
 detect_api_folder = join(parent_dir_path, 'detect_api')
 model_weight_folder = join(detect_api_folder, 'weights')
 
-video_folder = join(dir_path, 'testdata')
-tmp_folder = join(dir_path, 'tmp')
-STATIC_PATH = join(dir_path, 'static')
-os.makedirs(tmp_folder, exist_ok=True)
-
-# prepare model
 sys.path.append(parent_dir_path)
 sys.path.append(join(parent_dir_path, 'detect_api'))
 
@@ -50,7 +57,7 @@ extractor = mobnet_openvino(
 )
 classifier = nearCenter()
 
-# data storage to manage images and processing result
+# use data storage to manage images and processing result
 from data_storage import DataStorage
 ds = DataStorage()
 
@@ -66,8 +73,8 @@ def get_video_paths():
 @app.route('/get_directories', methods=['GET'])
 def get_directories():
     dir_list = [
-        os.path.join(tmp_folder, name) for name in os.listdir(tmp_folder)
-        if os.path.isdir(os.path.join(tmp_folder, name))
+        os.path.join(image_folder, name) for name in os.listdir(image_folder)
+        if os.path.isdir(os.path.join(image_folder, name))
     ]
     dir_list = sorted(dir_list)
     return jsonify(dir_list)
@@ -96,7 +103,7 @@ def process_video():
                  video_name=g.video_name)
 
     # save to temp directory
-    save_path = os.path.join(tmp_folder, g.video_name)
+    save_path = os.path.join(image_folder, g.video_name)
     os.makedirs(save_path, exist_ok=True)
     clear_dir(save_path)
     g.vs.save_to_folder(root_path=save_path)
@@ -115,7 +122,7 @@ def save_capture_result():
 
 def get_symlink_path(folder_path):
     # create symlink in tmp folder
-    symlink_path = os.path.join(STATIC_PATH, os.path.basename(folder_path))
+    symlink_path = os.path.join(static_folder, os.path.basename(folder_path))
     if not os.path.exists(symlink_path):
         os.symlink(folder_path, symlink_path)
     return symlink_path
@@ -326,7 +333,7 @@ def counting_class():
 def path2url(path, add_time=False):
     # For some resource need inplace changing, add timestamp to
     # force the browser to refresh them
-    url = path.replace(STATIC_PATH, f'{ADDRESS}/static')
+    url = path.replace(static_folder, f'{ADDRESS}/static')
     if add_time:
         url = url + f'?t={time()}'
     return url
@@ -379,11 +386,7 @@ def det_res2bbox(det_res, image_paths):
 def clear_dir(path):
     shutil.rmtree(path)
     os.makedirs(path)
-    # for name in os.listdir(path):
-    #     if name.endswith('.jpg'):
-    #         os.remove(os.path.join(path, name))
 
 
 if __name__ == '__main__':
-
     app.run(host=BASE_IP, port=BASE_PORT, debug=True, use_reloader=False)

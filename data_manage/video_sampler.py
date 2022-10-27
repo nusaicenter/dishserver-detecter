@@ -180,12 +180,37 @@ class VideoSampler(object):
 
 
 if __name__ == '__main__':
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument('--path', help='path of the video to process')
+    parser.add_argument('--folder', help='path of the video folder to process')
+    parser.add_argument('--fps', type=int, default=5, help='sample frequency of the program')
+    parser.add_argument('--stable', type=int, default=900, help='over how many milliseconds, assume the object is stable')
+    parser.add_argument('--area', type=float, default=0.2, help='over how much frame percent, assume the object is moving')
+    parser.add_argument('--save', default='capture', help='path of save folder for results')
+
+    args = parser.parse_args()
+
     vs = VideoSampler()
-    video_path = '/Users/jiahua/Downloads/moving_det_cv/testdata/test2.mp4'
-    video_name = os.path.splitext(os.path.basename(video_path))[0]
-    vs.capture(src=video_path, fps=5,assume_stable=900, diff_area_base=0.2, video_name=video_name)
+    # video_path = '/Users/jiahua/Downloads/moving_det_cv/testdata/test2.mp4'
+    # src_folder_path = '/Users/jiahua/Downloads/moving_det_cv/testdata'
 
-    save_path = 'capture'
-    os.makedirs(save_path, exist_ok=True)
+    if args.folder is not None:
+        paths = []
+        for path in os.listdir(args.folder):
+            if '.mp4' in path:
+                video_path = os.path.join(args.folder, path)
+                paths.append(video_path)
+    else:
+        paths = [args.path]
 
-    vs.save_to_folder(root_path=save_path)
+    for video_path in paths:
+            
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
+        vs.capture(src=video_path, fps=args.fps,assume_stable=args.stable, diff_area_base=args.area, video_name=video_name)
+
+        save_path = os.path.join(args.save, video_name)
+
+        os.makedirs(save_path, exist_ok=True)
+
+        vs.save_to_folder(root_path=save_path)
