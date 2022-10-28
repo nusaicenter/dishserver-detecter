@@ -1,0 +1,4 @@
+flask
+flask_cors>=3.0.10
+numpy>=1.19.2
+pillow

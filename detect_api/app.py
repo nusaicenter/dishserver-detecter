@@ -14,7 +14,6 @@ if False:
     torch.set_num_threads(cpu_num)
 
 import sys
-sys.path.append('/home/jiahua/yolov5')
 from pathlib import Path
 from time import sleep, time
 from PIL import Image
@@ -289,7 +288,14 @@ def unpair_kv(key_values: Dict[str,List[str]]) -> Tuple[List, List]:
     return all_keys, all_values
 
 
+
 if __name__ == "__main__":
+    from argparse import ArgumentParser
+    parser = ArgumentParser()
+    parser.add_argument('--host', default='127.0.0.1')
+    parser.add_argument('--port', default='36188')
+    args = parser.parse_args()
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     weights_path = os.path.join(os.path.dirname(__file__),'weights')
 
@@ -341,10 +347,7 @@ if __name__ == "__main__":
 
     STORE_IMAGE = True
 
-
-    #TODO argparth ip and host
-
-    app.run(host='0.0.0.0',
-        port=36188,
+    app.run(host=args.host,
+        port=args.port,
         debug=True,
         use_reloader=False)

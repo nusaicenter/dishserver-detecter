@@ -338,9 +338,16 @@ def check_image_file(path):
     assert filename.lower().endswith(IMG_EXTENSIONS), 'the file is not image'
 
 def load_image_folder(path:str):
-    # Scan the directory path and find all images
-    # For MainImage, if it has label file, the label path is the same as image,
-    # with .txt suffix and yolo-format(each line is [id x y w h(percent)])
+    # When loading a image folder, the file-based backend scans through the 
+    # directory and find all images, labels and classes. For `MainImage`
+    # (end with .jpg), if it is labelled, the label path is the same as image, 
+    # with .txt suffix and yolo-format(each line is [id x y w h(percent)]). 
+    # Also, the corresponding `SubImage` will be stored in sub_images folder. 
+    # `SubImage`s of the same class are placed in the same sub folder. A json 
+    # file with the same name in root folder records the `SubImage` order and 
+    # confirmation status. The images with boxes are stored in preview folder. 
+    # If the `MainImage` is not labelled, these files won't be generated.
+ 
     #
     # The directory structure is:
     # --- root directory
